@@ -5639,3 +5639,436 @@ fn a_linked_text_box_shows_and_follows_its_link_from_inside() {
     let (start, _) = wordcraft_engine::cmd::insert::bookmark_range(&s.doc, "Spot").unwrap();
     assert!(s.sel.is_collapsed() && s.sel.focus == start, "the caret went to the bookmark: {:?}", s.sel);
 }
+
+/// A double-click held down in a comment's text selects the word at once, and dragging then goes
+/// on by whole words, as in the document's own text.
+#[test]
+fn double_click_drag_in_a_balloon_selects_whole_words() {
+    use egui::accesskit::Role;
+    use egui::{Event, PointerButton};
+    use egui_kittest::kittest::Queryable;
+    let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    a.run("text.insert", json!({"text": "Some text here"})).unwrap();
+    a.run("select.text", json!({"text": "text"})).unwrap();
+    let id = a.run("review.newComment", json!({"text": "alpha beta gamma delta"})).unwrap()["id"].as_u64().unwrap() as u32;
+    a.run("view.commentsPane", json!({"value": false})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        a,
+    );
+    for _ in 0..6 {
+        h.step();
+    }
+    {
+        {
+            let card = h.state().canvas.balloon_rects.iter().find(|(i, _)| *i == id).map(|(_, r)| *r).expect("the comment has a balloon");
+            let at = card.left_top() + vec2(30.0, 8.0);
+            h.event(Event::PointerMoved(at));
+            for pressed in [true, false] {
+                h.event(Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers: Default::default() });
+                h.step();
+            }
+            for _ in 0..40 {
+                h.step();
+            }
+            assert_eq!(h.state().canvas.balloon, Some(id), "the click selected the balloon");
+        }
+        let field = h.query_all_by_role(Role::MultilineTextInput).map(|n| n.rect()).next().expect("an active balloon has its text field");
+        // Inside "alpha", then held and dragged past the end of the text.
+        let start = egui::pos2(field.min.x as f32 + 12.0, field.center().y as f32);
+        let end = egui::pos2(field.max.x as f32 - 4.0, field.center().y as f32);
+        h.event(Event::PointerMoved(start));
+        for pressed in [true, false, true] {
+            h.event(Event::PointerButton { pos: start, button: PointerButton::Primary, pressed, modifiers: Default::default() });
+            h.step();
+        }
+        for i in 1..=6 {
+            h.event(Event::PointerMoved(start + (end - start) * (i as f32 / 6.0)));
+            h.step();
+        }
+        h.event(Event::Text("X".into()));
+        h.step();
+        h.event(Event::PointerButton { pos: end, button: PointerButton::Primary, pressed: false, modifiers: Default::default() });
+        h.step();
+        leave_field(&mut h);
+        let part = h.state().session.doc.comments[&id].part;
+        assert_eq!(h.state().session.doc.plain_text(StoryRef::Part(part)), "X", "the drag took whole words from the first one");
+    }
+}
+
+/// The same on a balloon that isn't open yet: the first click of the double-click opens it, and
+/// the second, held, already selects the word under it.
+#[test]
+fn double_click_drag_on_a_closed_balloon_selects_whole_words() {
+    use egui::accesskit::Role;
+    use egui::{Event, PointerButton};
+    use egui_kittest::kittest::Queryable;
+    let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    a.run("text.insert", json!({"text": "Some text here"})).unwrap();
+    a.run("select.text", json!({"text": "text"})).unwrap();
+    let id = a.run("review.newComment", json!({"text": "alpha beta gamma delta"})).unwrap()["id"].as_u64().unwrap() as u32;
+    a.run("view.commentsPane", json!({"value": false})).unwrap();
+    a.run("caret.docStart", json!({})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        a,
+    );
+    for _ in 0..6 {
+        h.step();
+    }
+    crate::canvas::deselect_balloon(h.state_mut());
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_ne!(h.state().canvas.balloon, Some(id));
+    assert!(h.query_all_by_role(Role::MultilineTextInput).next().is_none(), "no field while closed");
+    let card = h.state().canvas.balloon_rects.iter().find(|(i, _)| *i == id).map(|(_, r)| *r).expect("the comment has a balloon");
+    // The body's first word, under the author and date lines.
+    let row = card.height() - 12.0;
+    let start = egui::pos2(card.min.x + 14.0, card.max.y - 6.0 - row.min(14.0) / 2.0);
+    let end = egui::pos2(card.max.x - 6.0, start.y);
+    h.event(Event::PointerMoved(start));
+    for pressed in [true, false, true] {
+        h.event(Event::PointerButton { pos: start, button: PointerButton::Primary, pressed, modifiers: Default::default() });
+        h.step();
+    }
+    for i in 1..=6 {
+        h.event(Event::PointerMoved(start + (end - start) * (i as f32 / 6.0)));
+        h.step();
+    }
+    h.event(Event::Text("X".into()));
+    h.step();
+    h.event(Event::PointerButton { pos: end, button: PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.step();
+    leave_field(&mut h);
+    let part = h.state().session.doc.comments[&id].part;
+    assert_eq!(h.state().session.doc.plain_text(StoryRef::Part(part)), "X", "the drag took whole words from the first one");
+}
+
+// ---- Ported from PR #2479 (drag selected text) ----
+
+/// A harness on "The quick brown fox jumps" with "quick " selected (#2449).
+fn text_drop_window() -> egui_kittest::Harness<'static, WordApp> {
+    let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    a.run("text.insert", json!({"text": "The quick brown fox jumps"})).unwrap();
+    a.run("select.range", json!({"anchor": Pos::body(0, 4), "focus": Pos::body(0, 10)})).unwrap();
+    text_drop_harness(a)
+}
+
+fn text_drop_harness(mut a: WordApp) -> egui_kittest::Harness<'static, WordApp> {
+    a.run("view.commentsPane", json!({"value": false})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        a,
+    );
+    for _ in 0..6 {
+        h.step();
+    }
+    h
+}
+
+/// The screen point just right of the text position at `off` in the first paragraph.
+fn at_off(h: &mut egui_kittest::Harness<'_, WordApp>, off: usize) -> Pos2 {
+    let c = h.state_mut().session.layout().caret(&Pos::body(0, off)).expect("caret");
+    page_to_screen(h.state_mut(), c.page, c.x + 1.0, c.top + c.height / 2.0).expect("on screen")
+}
+
+/// Press at `from`, move to `to` in four steps (running `mid` there), release.
+fn press_drag(
+    h: &mut egui_kittest::Harness<'_, WordApp>,
+    from: Pos2,
+    to: Pos2,
+    mods: egui::Modifiers,
+    mid: impl FnOnce(&mut egui_kittest::Harness<'_, WordApp>),
+) {
+    use egui::{Event, PointerButton};
+    h.event(Event::ModifiersChanged(mods));
+    h.event(Event::PointerMoved(from));
+    h.event(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: mods });
+    h.step();
+    for k in 1..=4 {
+        h.event(Event::PointerMoved(from + (to - from) * (k as f32 / 4.0)));
+        h.step();
+    }
+    mid(h);
+    h.event(Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: mods });
+    for _ in 0..3 {
+        h.step();
+    }
+    h.event(Event::ModifiersChanged(egui::Modifiers::NONE));
+    for _ in 0..40 {
+        h.step();
+    }
+}
+
+fn body(h: &egui_kittest::Harness<'_, WordApp>) -> String {
+    h.state().session.doc.plain_text(StoryRef::Body)
+}
+
+fn selection(h: &egui_kittest::Harness<'_, WordApp>) -> (Pos, Pos) {
+    h.state().session.sel.ordered()
+}
+
+/// #2449: selected text dragged with the mouse moves where it's dropped, a drop caret showing
+/// the place on the way; the moved text stays selected and one undo puts it back.
+#[test]
+fn dragging_selected_text_moves_it() {
+    let mut h = text_drop_window();
+    // Over the selection the pointer is the arrow, as in Word.
+    let from = at_off(&mut h, 6);
+    h.event(egui::Event::PointerMoved(from));
+    h.step();
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Default);
+    let to = at_off(&mut h, 16);
+    press_drag(&mut h, from, to, egui::Modifiers::NONE, |h| {
+        let d = h.state().canvas.text_drop.as_ref().expect("the press held the text");
+        assert!(d.started, "the move started a drag");
+        assert_eq!(d.to.as_ref().map(|t| t.0.clone()), Some(Pos::body(0, 16)), "the drop caret is before fox");
+        assert!(h.state().canvas.drag_selecting(), "the view scrolls at its edges meanwhile");
+        assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Move);
+    });
+    assert_eq!(body(&h), "The brown quick fox jumps");
+    assert_eq!(selection(&h), (Pos::body(0, 10), Pos::body(0, 16)), "the moved text is selected");
+    assert!(h.state().canvas.text_drop.is_none());
+    h.state_mut().run("edit.undo", json!({})).unwrap();
+    assert_eq!(body(&h), "The quick brown fox jumps");
+}
+
+/// #2449: with Ctrl (Option on a Mac) held the dragged text is copied.
+#[test]
+fn dragging_selected_text_with_the_copy_key_copies_it() {
+    let mut h = text_drop_window();
+    let copy = if cfg!(target_os = "macos") { egui::Modifiers::ALT } else { egui::Modifiers::CTRL };
+    let (from, to) = (at_off(&mut h, 6), at_off(&mut h, 16));
+    press_drag(&mut h, from, to, copy, |h| {
+        assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Copy);
+    });
+    assert_eq!(body(&h), "The quick brown quick fox jumps");
+    assert_eq!(selection(&h), (Pos::body(0, 16), Pos::body(0, 22)));
+}
+
+/// #2449: Escape during the drag, or a drop back on the selection, leaves the text where it
+/// was; a click on the selection without a drag puts the caret there.
+#[test]
+fn escape_or_a_click_leaves_selected_text_in_place() {
+    let mut h = text_drop_window();
+    let (from, to) = (at_off(&mut h, 6), at_off(&mut h, 16));
+    press_drag(&mut h, from, to, egui::Modifiers::NONE, |h| {
+        h.key_press(egui::Key::Escape);
+        h.step();
+        assert!(h.state().canvas.text_drop.as_ref().is_some_and(|d| d.cancelled));
+    });
+    assert_eq!(body(&h), "The quick brown fox jumps", "Escape: nothing moved");
+    assert_eq!(selection(&h), (Pos::body(0, 4), Pos::body(0, 10)), "and the selection stays");
+    assert!(h.state().canvas.text_drop.is_none());
+    // Dragged away and back onto the selection: nothing moves, the caret is put there.
+    let back = at_off(&mut h, 8);
+    press_drag(&mut h, from, to, egui::Modifiers::NONE, |h| {
+        for _ in 0..4 {
+            h.event(egui::Event::PointerMoved(back));
+            h.step();
+        }
+    });
+    assert_eq!(body(&h), "The quick brown fox jumps");
+    assert_eq!(selection(&h), (Pos::body(0, 8), Pos::body(0, 8)));
+    // A click on the selection without moving: the caret goes there, as a click does.
+    h.state_mut().run("select.range", json!({"anchor": Pos::body(0, 4), "focus": Pos::body(0, 10)})).unwrap();
+    for _ in 0..3 {
+        h.step();
+    }
+    press_drag(&mut h, from, from, egui::Modifiers::NONE, |_| {});
+    assert_eq!(body(&h), "The quick brown fox jumps");
+    assert_eq!(selection(&h), (Pos::body(0, 6), Pos::body(0, 6)));
+}
+
+/// #2449: a press outside the selection still drags out a new selection, and so does a press
+/// on it with File › Options › Advanced › "Allow text to be dragged and dropped" off.
+#[test]
+fn a_press_off_the_selection_still_selects() {
+    let mut h = text_drop_window();
+    let (from, to) = (at_off(&mut h, 11), at_off(&mut h, 15));
+    press_drag(&mut h, from, to, egui::Modifiers::NONE, |h| {
+        assert!(h.state().canvas.text_drop.is_none());
+    });
+    assert_eq!(body(&h), "The quick brown fox jumps");
+    assert_eq!(selection(&h), (Pos::body(0, 11), Pos::body(0, 15)));
+    h.state_mut().run("file.options", json!({"dragAndDrop": false})).unwrap();
+    h.state_mut().run("select.range", json!({"anchor": Pos::body(0, 4), "focus": Pos::body(0, 10)})).unwrap();
+    for _ in 0..3 {
+        h.step();
+    }
+    let (from, to) = (at_off(&mut h, 6), at_off(&mut h, 16));
+    h.event(egui::Event::PointerMoved(from));
+    h.step();
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Text, "the I-beam, nothing to pick up");
+    press_drag(&mut h, from, to, egui::Modifiers::NONE, |_| {});
+    assert_eq!(body(&h), "The quick brown fox jumps");
+    assert_eq!(selection(&h), (Pos::body(0, 6), Pos::body(0, 16)));
+}
+
+/// #2449 review: a selection running from text into a table takes whole rows, and moving it
+/// would empty their cells, so a press on it starts a new selection instead.
+#[test]
+fn a_selection_running_into_a_table_is_not_dragged() {
+    let mut d = wordcraft_doc::Document::from_text("Intro\nAfter");
+    d.insert_block(StoryRef::Body, &wordcraft_doc::Path::top(1), wordcraft_doc::Block::Table(wordcraft_doc::Table::new(2, 2, 400.0))).unwrap();
+    let mut s = wordcraft_engine::Session::new(d);
+    let cell = |r: u32, c: u32| Pos { story: StoryRef::Body, path: wordcraft_doc::Path(vec![1, r, c, 0]), off: 0 };
+    for (r, c) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+        s.sel = wordcraft_engine::Selection::caret(cell(r, c));
+        s.run("text.insert", &json!({"text": format!("r{r}c{c}")})).unwrap();
+    }
+    s.run("select.range", &json!({"anchor": Pos::body(0, 2), "focus": Pos { off: 1, ..cell(1, 1) }})).unwrap();
+    let mut h = text_drop_harness(WordApp::new(s, Default::default()));
+    let before = h.state().session.doc.clone();
+    let (from, to) = (at_off(&mut h, 3), at_off(&mut h, 4));
+    h.event(egui::Event::PointerMoved(from));
+    h.step();
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Text, "the I-beam: nothing to pick up");
+    press_drag(&mut h, from, to, egui::Modifiers::NONE, |h| {
+        assert!(h.state().canvas.text_drop.is_none());
+    });
+    assert!(h.state().session.doc == before, "the table is untouched");
+    assert_eq!(selection(&h), (Pos::body(0, 3), Pos::body(0, 4)), "a new selection");
+}
+
+/// #2449 review: let go over the ruler, the ribbon or outside the window, the text stays.
+#[test]
+fn a_release_off_the_page_area_leaves_the_text() {
+    let mut h = text_drop_window();
+    let from = at_off(&mut h, 6);
+    let vp = h.state().canvas.viewport.expect("the canvas laid out");
+    let above = egui::pos2(from.x, vp.min.y - 30.0);
+    press_drag(&mut h, from, above, egui::Modifiers::NONE, |h| {
+        assert!(h.state().canvas.text_drop.as_ref().is_some_and(|d| d.started));
+    });
+    assert_eq!(body(&h), "The quick brown fox jumps");
+    assert_eq!(selection(&h), (Pos::body(0, 4), Pos::body(0, 10)));
+}
+
+/// #2449 review: Escape during a drag in Focus mode cancels the drag and stays in Focus.
+#[test]
+fn escape_in_focus_mode_cancels_the_drag() {
+    let mut h = text_drop_window();
+    h.state_mut().run("view.focus", json!({"value": true})).unwrap();
+    for _ in 0..6 {
+        h.step();
+    }
+    let (from, to) = (at_off(&mut h, 6), at_off(&mut h, 16));
+    press_drag(&mut h, from, to, egui::Modifiers::NONE, |h| {
+        h.key_press(egui::Key::Escape);
+        h.step();
+    });
+    assert!(h.state().session.view.focus_mode, "still in Focus");
+    assert_eq!(body(&h), "The quick brown fox jumps");
+    assert_eq!(selection(&h), (Pos::body(0, 4), Pos::body(0, 10)));
+}
+
+/// #2449 review: a double-click on the selection whose first release and second press come in
+/// one (slow) frame still selects the word.
+#[test]
+fn a_quick_double_click_on_the_selection_selects_a_word() {
+    use egui::{Event, PointerButton};
+    let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    a.run("text.insert", json!({"text": "The quick brown fox jumps"})).unwrap();
+    a.run("view.commentsPane", json!({"value": false})).unwrap();
+    a.run("select.range", json!({"anchor": Pos::body(0, 4), "focus": Pos::body(0, 16)})).unwrap();
+    // Frames by hand: the harness gives every event a frame of its own.
+    let ctx = egui::Context::default();
+    let screen = Rect::from_min_size(Pos2::ZERO, vec2(1440.0, 900.0));
+    let mut t = 0.0;
+    let mut frame = |a: &mut WordApp, events: Vec<Event>| {
+        t += 1.0 / 60.0;
+        let input = egui::RawInput { events, time: Some(t), screen_rect: Some(screen), ..Default::default() };
+        ctx.run_ui(input, |ui| {
+            a.logic(ui.ctx());
+            a.ui(ui);
+        })
+        .drop_without_applying_deltas();
+    };
+    for _ in 0..4 {
+        frame(&mut a, Vec::new());
+    }
+    let c = a.session.layout().caret(&Pos::body(0, 12)).expect("caret");
+    let p = page_to_screen(&mut a, c.page, c.x + 1.0, c.top + c.height / 2.0).expect("on screen");
+    let button = |pressed: bool| Event::PointerButton { pos: p, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+    frame(&mut a, vec![Event::PointerMoved(p)]);
+    frame(&mut a, vec![button(true)]);
+    frame(&mut a, vec![button(false), button(true)]);
+    frame(&mut a, vec![button(false)]);
+    for _ in 0..3 {
+        frame(&mut a, Vec::new());
+    }
+    assert_eq!(a.session.sel.ordered(), (Pos::body(0, 10), Pos::body(0, 16)), "brown and its space");
+    assert_eq!(a.session.doc.plain_text(StoryRef::Body), "The quick brown fox jumps");
+}
+
+/// #2449 review: text carrying a text box never shows the drop caret inside that box.
+#[test]
+fn the_drop_caret_stays_out_of_a_text_box_the_text_carries() {
+    let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    a.run("text.insert", json!({"text": "Before "})).unwrap();
+    let id = a.run("insert.textBox", json!({"text": "Box"})).unwrap()["story"].as_u64().unwrap() as u32;
+    let end = a.session.doc.end_of(StoryRef::Body);
+    a.run("select.range", json!({"anchor": Pos::body(0, 0), "focus": end})).unwrap();
+    let mut h = text_drop_harness(a);
+    let b = h.state_mut().session.layout().text_box(id, 0).expect("the box is laid out");
+    let inside = page_to_screen(h.state_mut(), b.page, b.rect.x + b.rect.w / 2.0, b.rect.y + b.rect.h / 2.0).expect("on screen");
+    let from = at_off(&mut h, 2);
+    press_drag(&mut h, from, inside, egui::Modifiers::NONE, |h| {
+        let to = h.state().canvas.text_drop.as_ref().and_then(|d| d.to.clone()).expect("a drop point");
+        assert_eq!(to.0.story, StoryRef::Body, "not in the box it carries");
+        h.key_press(egui::Key::Escape);
+        h.step();
+    });
+    assert_eq!(h.state().session.doc.plain_text(StoryRef::Part(id)), "Box");
+}
+
+/// #2449: dragging selected text to the bottom of the view scrolls on, and the text lands
+/// further down the document.
+#[test]
+fn dragging_selected_text_to_the_edge_scrolls() {
+    let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    let para = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor. ".repeat(4);
+    a.run("text.insert", json!({"text": format!("Marker {}", vec![para.trim_end(); 40].join("\r"))})).unwrap();
+    a.run("view.commentsPane", json!({"value": false})).unwrap();
+    a.run("caret.docStart", json!({})).unwrap();
+    a.run("select.range", json!({"anchor": Pos::body(0, 0), "focus": Pos::body(0, 7)})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1280.0, 700.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        a,
+    );
+    for _ in 0..6 {
+        h.step();
+    }
+    let from = at_off(&mut h, 3);
+    let vp = h.state().canvas.viewport.expect("the canvas laid out");
+    let edge = egui::pos2(from.x, vp.max.y - 2.0);
+    press_drag(&mut h, from, edge, egui::Modifiers::NONE, |h| {
+        for _ in 0..60 {
+            h.event(egui::Event::PointerMoved(edge));
+            h.step();
+        }
+        assert!(h.state().canvas.scroll_offset.y > 0.0, "the view scrolled during the drag");
+    });
+    let first = h.state().session.doc.para(StoryRef::Body, &wordcraft_doc::Path::top(0)).map(|p| p.text.clone()).unwrap_or_default();
+    assert!(!first.starts_with("Marker"), "the text left the first paragraph: {first:?}");
+    let (a, _) = selection(&h);
+    assert!(a.path.last() > 3, "it landed well down the document: {a:?}");
+}

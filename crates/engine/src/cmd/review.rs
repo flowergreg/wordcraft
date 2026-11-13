@@ -44,6 +44,12 @@ pub fn specs() -> Vec<CommandSpec> {
         .params(r#"{"id"?: non-negative JSON integer (omit to use the caret), "value"?: bool (omit to toggle)}"#),
         CommandSpec::new("review.nextComment", "Next", "Review › Comments", |s, _| nav_comment(s, 1)).pure(),
         CommandSpec::new("review.previousComment", "Previous", "Review › Comments", |s, _| nav_comment(s, -1)).pure(),
+        CommandSpec::new("review.showResolved", "Show Resolved", "Review › Comments", |s, v| {
+            s.view.hide_resolved = !p::bool(v, "value").unwrap_or(s.view.hide_resolved);
+            Ok(json!({"value": !s.view.hide_resolved}))
+        })
+        .params(r#"{"value"?: bool} (false hides resolved comments and their replies until the app is restarted; no value switches)"#)
+        .pure(),
         CommandSpec::new("review.comments", "Show Comments", "Review › Comments", list_comments).pure(),
         CommandSpec::new("review.trackChanges", "Track Changes", "Review › Tracking", |s, v| {
             s.doc.settings.track_changes = p::bool(v, "value").unwrap_or(!s.doc.settings.track_changes);

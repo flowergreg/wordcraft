@@ -228,7 +228,16 @@ pub fn comment_list(s: &Session) -> Vec<(u32, Option<Pos>)> {
             found.push((*id, None));
         }
     }
+    if s.view.hide_resolved {
+        found.retain(|(id, _)| !resolved_thread(s, *id));
+    }
     found
+}
+
+/// Whether comment `id` is resolved, or is a reply to a resolved comment.
+fn resolved_thread(s: &Session, id: u32) -> bool {
+    let Some(c) = s.doc.comments.get(&id) else { return false };
+    c.resolved || c.parent.and_then(|p| s.doc.comments.get(&p)).is_some_and(|p| p.resolved)
 }
 
 pub(super) fn list_comments(s: &mut Session, _: &Value) -> CmdResult {

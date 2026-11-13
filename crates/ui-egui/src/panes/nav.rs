@@ -48,7 +48,7 @@ pub(super) fn nav(app: &mut WordApp, ui: &mut Ui) {
     }
     ui.add_space(4.0);
     ui.horizontal_wrapped(|ui| {
-        for (k, l) in [("headings", "Headings"), ("pages", "Pages"), ("results", "Results")] {
+        for (k, l) in [("headings", "Headings"), ("results", "Results")] {
             if ui.selectable_label(app.ui.nav_tab == k, tl!(l)).clicked() {
                 app.ui.nav_tab = k.into();
             }
@@ -56,17 +56,10 @@ pub(super) fn nav(app: &mut WordApp, ui: &mut Ui) {
     });
     ui.separator();
     egui::ScrollArea::vertical().show(ui, |ui| match app.ui.nav_tab.as_str() {
-        "pages" => {
-            let l = app.session.layout();
-            for (i, p) in l.pages.iter().enumerate() {
-                let label = crate::i18n::fmt(tl!("Page {page}"), &[("page", &p.number.to_string())]);
-                if ui.selectable_label(app.session.page_hint == i, label).clicked() {
-                    let _ = app.run("edit.goto", json!({"page": i + 1}));
-                }
-            }
-        }
         "results" => {
             let results = app.session.find.results.clone();
+            // Each result shows the page it is on: its place among the document's pages.
+            let layout = app.session.layout();
             let current = current_result(app);
             // When the arrows (or a search) move to another result, the list scrolls to it.
             let seen = app.window_id("nav_result_seen");
@@ -84,6 +77,11 @@ pub(super) fn nav(app: &mut WordApp, ui: &mut Ui) {
                 let post = p.text.get(b.off..to).unwrap_or("");
                 let mut job = egui::text::LayoutJob::default();
                 let fmt = |c| egui::TextFormat { font_id: regular(12.0), color: c, ..Default::default() };
+                if let Some(page) = layout.page_of(a) {
+                    let label = crate::i18n::fmt(tl!("Page {page}"), &[("page", &(page + 1).to_string())]);
+                    let weak = ui.visuals().weak_text_color();
+                    job.append(&format!("{label}\n"), 0.0, egui::TextFormat { font_id: semibold(11.0), color: weak, ..Default::default() });
+                }
                 job.append(pre, 0.0, fmt(ui.visuals().text_color()));
                 // The match is marked the way Find marks it on the page, per theme (#656).
                 let mark = Tokens::get(ui.ctx()).find_highlight;

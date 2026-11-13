@@ -7432,8 +7432,9 @@ fn find_replace_and_go_to_keys_like_word() {
     h.event(egui::Event::Text("Kilns fire clay. Kilns cool.".into()));
     h.step();
     let nav_query = |h: &egui_kittest::Harness<WordApp>| h.ctx.data(|d| d.get_temp::<String>(h.state().window_id("nav_query"))).unwrap_or_default();
-    // Ctrl+F: the pane, and typing goes into its search box.
-    h.event(key(egui::Key::F, egui::Modifiers::COMMAND));
+    // Home › Editing › Find: the pane, and typing goes into its search box (personal build:
+    // Ctrl+F is the dialog, checked below).
+    let _ = h.state_mut().run("edit.find", json!({}));
     h.step();
     h.step();
     assert!(h.state().session.view.nav_pane, "the Navigation pane opened");
@@ -7460,7 +7461,7 @@ fn find_replace_and_go_to_keys_like_word() {
     h.state_mut().run("select.text", json!({"text": "Kilns"})).unwrap();
     h.state_mut().canvas.want_focus = true;
     h.step();
-    h.event(key(egui::Key::F, egui::Modifiers::COMMAND));
+    let _ = h.state_mut().run("edit.find", json!({}));
     h.step();
     h.step();
     assert_eq!(nav_query(&h), "Kilns");
@@ -7481,6 +7482,15 @@ fn find_replace_and_go_to_keys_like_word() {
     h.state_mut().run("edit.advancedFind", json!({})).unwrap();
     h.step();
     assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("find"));
+    // Personal build: Ctrl+F opens the Find and Replace dialog with its search options shown.
+    h.state_mut().dialog = None;
+    h.state_mut().canvas.want_focus = true;
+    h.step();
+    h.event(key(egui::Key::F, egui::Modifiers::COMMAND));
+    h.step();
+    h.step();
+    assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("find"), "Ctrl+F opens the dialog");
+    assert!(matches!(h.state().dialog.as_ref(), Some(crate::dialogs::Dialog::Find { extra, .. }) if extra.more), "with the options shown");
 }
 
 /// Builds a root-viewport raw input at `size`, optionally marked minimized and occluded.

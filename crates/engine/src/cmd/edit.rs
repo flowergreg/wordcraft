@@ -120,10 +120,12 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .pure(),
         CommandSpec::new("edit.find", "Find", "Home › Editing", find)
-            .key("Mod+F")
             .params(r#"{"text": string, "matchCase"?: bool, "wholeWord"?: bool, "matchPrefix"?: bool, "matchSuffix"?: bool, "ignorePunct"?: bool, "ignoreSpace"?: bool, "wildcards"?: bool, "special"?: bool (^p ^t ^# … codes, default true), "regex"?: bool}"#)
             .pure(),
         CommandSpec::new("edit.advancedFind", "Advanced Find", "Home › Editing › Find", advanced_find)
+            // Personal build: Ctrl+F opens the Find and Replace dialog; the Navigation pane's
+            // search is Home › Editing › Find.
+            .key("Mod+F")
             .params(r#"{"text"?: string, …options of edit.find, "in"?: "main|selection", "highlight"?: bool}"#)
             .pure(),
         CommandSpec::new("edit.findNext", "Find Next", "Home › Editing › Find", |s, v| {
@@ -298,7 +300,9 @@ fn insert_spike(s: &mut Session, _: &Value) -> CmdResult {
 /// as Keep Text Only does.
 fn paste(s: &mut Session, v: &Value) -> CmdResult {
     match super::paste::paste_content(s, v)? {
-        super::paste::Pasted::Fragment(frag) => super::paste::insert(s, frag)?,
+        super::paste::Pasted::Fragment(frag) => {
+            super::paste::insert(s, frag)?;
+        }
         super::paste::Pasted::Text(text) => super::paste::insert_text(s, &text)?,
     }
     sel_result(s)

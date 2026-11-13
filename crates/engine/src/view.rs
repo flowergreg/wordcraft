@@ -30,6 +30,11 @@ pub struct ViewState {
     #[serde(default)]
     pub style_inspector: bool,
     pub comments_pane: bool,
+    /// Resolved comments (and their replies) are hidden: no balloons, not in the Comments pane,
+    /// skipped by Next and Previous (`review.showResolved`). Never saved, so every start shows
+    /// them all and none can go unnoticed in a shared document.
+    #[serde(skip)]
+    pub hide_resolved: bool,
     /// The Clipboard pane (Home › Clipboard): items collected by Copy and Cut.
     #[serde(default)]
     pub clipboard_pane: bool,
@@ -189,6 +194,7 @@ impl Default for ViewState {
             styles_pane_dock: StylesPaneDock::Right,
             style_inspector: false,
             comments_pane: false,
+            hide_resolved: false,
             clipboard_pane: false,
             smart_art_pane: false,
             accessibility_pane: false,

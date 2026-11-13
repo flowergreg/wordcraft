@@ -686,11 +686,8 @@ impl Dialog {
                     suffix: app.session.find.match_suffix,
                     ignore_punct: app.session.find.ignore_punct,
                     ignore_space: app.session.find.ignore_space,
-                    more: app.session.find.wildcards
-                        || app.session.find.match_prefix
-                        || app.session.find.match_suffix
-                        || app.session.find.ignore_punct
-                        || app.session.find.ignore_space,
+                    // The search options always show (personal build).
+                    more: true,
                     to_replace: false,
                 },
                 tab: match name {

@@ -50,6 +50,18 @@ pub(super) fn review(app: &mut WordApp, ui: &mut Ui) {
         });
         let shown = app.session.view.comments_pane;
         big(ui, app, "showComments", "Show\nComments", "view.commentsPane", json!({"value": !shown}), false);
+        // Resolved comments can be hidden for this session only (never saved).
+        let resolved = !app.session.view.hide_resolved;
+        stack(ui, |ui| {
+            small(
+                ui,
+                app,
+                "showComments",
+                Some("Show Resolved"),
+                "Show resolved comments",
+                crate::widgets::ButtonAction::new("review.showResolved", json!({"value": !resolved}), resolved),
+            );
+        });
     });
     group(ui, "Tracking", Some("review.trackingOptions"), app, |ui, app| {
         let on = app.session.doc.settings.track_changes;

@@ -359,7 +359,7 @@ fn navigation_tabs_fit_the_narrowest_pane_in_every_language() {
             app,
         );
         h.run_steps(3);
-        for (i, tab) in ["Headings", "Pages", "Results"].into_iter().enumerate() {
+        for (i, tab) in ["Headings", "Results"].into_iter().enumerate() {
             let label = crate::i18n::tr(lang, tab);
             let r = h.get_by_label(label).rect();
             assert!(body.get().expand(0.5).contains_rect(r), "{}: {label} at {r:?} is cut off by the {BODY} pt body", lang.code());
