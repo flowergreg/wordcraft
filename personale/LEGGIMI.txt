@@ -1,0 +1,34 @@
+WordCraft — versione personale di Gregorio Grasselli
+====================================================
+
+Basata su WordCraft (storytold/wordcraft, ramo main del 13/11/2026), con le modifiche
+del ramo "mie-modifiche" di github.com/flowergreg/wordcraft (commit 50b7e0849).
+Windows 10/11 a 64 bit. Non serve installazione: basta avviare wordcraft.exe.
+
+AL PRIMO AVVIO
+L'eseguibile non è firmato digitalmente, quindi Windows (SmartScreen) può mostrare
+«Windows ha protetto il PC». Clicca «Ulteriori informazioni» e poi «Esegui comunque».
+Le impostazioni (lingua, preferenze) sono le stesse dell'eventuale WordCraft ufficiale
+installato.
+
+COSA CAMBIA RISPETTO ALLA VERSIONE UFFICIALE
+- Pennello: un clic su una parola le applica il formato dei caratteri e del paragrafo.
+- Doppio clic tenuto premuto e trascinato: seleziona per parole intere anche nelle note
+  a piè di pagina, nelle note di chiusura e nei commenti (fumetti e riquadro Commenti).
+- Trascinamento del testo selezionato: lo sposta; con Ctrl premuto lo copia; Esc annulla.
+  Gli spazi vengono sistemati come in Word. Si disattiva in File › Opzioni › Impostazioni
+  avanzate («Consenti di trascinare il testo selezionato»).
+- Riquadro Navigazione: ogni risultato della ricerca mostra la pagina (la posizione nel
+  file); frecce ▲▼, Invio e Maiusc+Invio per scorrere i risultati; tutte le occorrenze
+  evidenziate nel testo, quella corrente in arancione. La scheda «Pagine» è stata tolta.
+- Ctrl+F apre «Trova e sostituisci» con le opzioni di ricerca già aperte e il testo
+  selezionato nel campo «Trova». Il riquadro laterale si apre da Home › Trova.
+- Revisione › Commenti › «Mostra risolti»: spento, nasconde i commenti risolti (e le loro
+  risposte) da fumetti, riquadro e Successivo/Precedente. A ogni avvio torna acceso.
+- Aggiornamento automatico disattivato, perché una versione ufficiale non sostituisca
+  questa. Per avere le novità ufficiali bisogna riportarle nel fork e ricompilare.
+
+LICENZE
+WordCraft è distribuito con licenza MIT o Apache-2.0 (LICENSE-MIT, LICENSE-APACHE, NOTICE).
+I caratteri inclusi sono distribuiti con licenza SIL OFL (cartella font-licenses).
+Il nome e il logo WordCraft appartengono ai loro titolari: questa copia è per uso personale.
