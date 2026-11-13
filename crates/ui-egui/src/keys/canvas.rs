@@ -407,6 +407,10 @@ fn ime_commit(app: &mut WordApp, text: String) {
 
 /// A key press the canvas handles (shortcut, ink, objects, clipboard keys).
 fn key_press(app: &mut WordApp, ctx: &egui::Context, key: Key, modifiers: Modifiers) {
+    // Escape while dragging selected text leaves it where it was (#2449).
+    if key == Key::Escape && app.canvas.cancel_text_drop() {
+        return;
+    }
     if key == Key::Escape && app.session.painter.is_some() {
         app.session.painter = None;
         return;

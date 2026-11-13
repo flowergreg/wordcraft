@@ -46,7 +46,7 @@ pub(crate) fn press_count(last: Option<(f64, Pos2, u8)>, now: f64, at: Pos2, del
 impl CanvasState {
     /// True while a mouse drag-select is in progress (the mini toolbar waits for mouse-up).
     pub fn drag_selecting(&self) -> bool {
-        self.dragging
+        self.dragging || self.dragging_text()
     }
 }
 
@@ -117,6 +117,14 @@ fn route_pointer_targets(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rect
     // A pen or the eraser (Draw tab) owns the pointer.
     if crate::ink::pointer(app, ui, resp, rects, layout, scale) {
         return None;
+    }
+    // Selected text held or dragged owns the pointer until the release (#2449). A press in the
+    // frame of the release (a quick double-click) is then handled as usual.
+    if app.canvas.text_drop.is_some() {
+        super::text_drop::text_drop(app, ui, rects, layout, scale);
+        if app.canvas.text_drop.is_some() || !ui.input(|i| i.pointer.primary_pressed()) {
+            return None;
+        }
     }
     let pointer = resp.interact_pointer_pos().or_else(|| resp.hover_pos());
     // An object (or crop handle) drag follows the pointer anywhere until it's released.
@@ -335,6 +343,28 @@ fn handle_primary_press(
         && let Some(link) = link_under(app, layout, page, x, y, &pos)
     {
         follow_link(app, link);
+        return true;
+    }
+    // A press on the selected text holds it: a drag moves it, a click puts the caret there (#2449).
+    if clicks == 1
+        && story == app.session.sel.focus.story
+        && ui.input(|i| i.pointer.primary_down())
+        && super::text_drop::text_drop_keys(mods)
+        && super::text_drop::drags_selected_text(app, p)
+    {
+        app.canvas.column_drag = None;
+        app.canvas.text_drop = Some(super::text_drop::TextDrop {
+            from: p,
+            at: pos,
+            page,
+            sentence: !cfg!(target_os = "macos") && mods.command,
+            started: false,
+            cancelled: false,
+            to: None,
+            copy: super::text_drop::copy_key(mods),
+            carried: Default::default(),
+        });
+        app.session.page_hint = page;
         return true;
     }
     let pj = serde_json::to_value(&pos).unwrap_or_default();

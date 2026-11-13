@@ -123,7 +123,8 @@ impl Session {
             steps.push((id.to_string(), kept()));
         }
         if spec.mutates && !matches!(id, "edit.undo" | "edit.redo" | "edit.repeat") {
-            self.last_command = Some((id.to_string(), kept()));
+            // A drop lands at one place in the text: Repeat has nothing to do after it.
+            self.last_command = if id == "edit.moveText" { None } else { Some((id.to_string(), kept())) };
         }
         // Typing, caret movement and selection outside the equation commands leave the equation.
         self.leave_math_for_command(id);

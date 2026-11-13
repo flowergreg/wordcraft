@@ -29,6 +29,7 @@ mod pages;
 mod reading;
 mod rulers;
 mod story;
+mod text_drop;
 
 #[cfg(test)]
 use balloons::balloon_text;
@@ -156,6 +157,10 @@ pub struct CanvasState {
     /// A drag after a double-click, triple-click or Ctrl/⌘+click: the unit it extends by, the
     /// unit first selected, and the last position the pointer hit.
     unit_drag: Option<UnitDrag>,
+    /// A press held on the selected text: dragging it moves or copies the text (#2449).
+    pub(crate) text_drop: Option<text_drop::TextDrop>,
+    /// Screen rects of the selection highlight drawn this frame.
+    selection_rects: Vec<Rect>,
     pub last_highlight: String,
     pub last_font_color: String,
     pub last_shading: String,
@@ -355,6 +360,7 @@ impl CanvasState {
         self.dragging = false;
         self.column_drag = None;
         self.unit_drag = None;
+        self.text_drop = None;
     }
 
     /// The object a drag has taken off its page: which page, and which object. `None` unless an
@@ -401,6 +407,8 @@ impl Default for CanvasState {
             last_press: None,
             hf_press_switched: false,
             unit_drag: None,
+            text_drop: None,
+            selection_rects: Vec::new(),
             last_highlight: "yellow".into(),
             last_font_color: "C00000".into(),
             last_shading: "FFF2CC".into(),
@@ -716,6 +724,9 @@ fn scroll_motion(app: &mut WordApp, ui: &Ui, full: Rect, view: &CanvasView) -> S
         app.canvas.dragging = false;
         app.canvas.column_drag = None;
         app.canvas.unit_drag = None;
+    }
+    if app.canvas.text_drop.is_some() && !down && !released {
+        app.canvas.text_drop = None;
     }
     let auto_delta = if !app.session.view.read_mode
         && app.canvas.drag_selecting()
@@ -1505,6 +1516,8 @@ fn finish_canvas_frame(finish: CanvasFinish<'_>, out: egui::scroll_area::ScrollA
     app.canvas.context_menu_open = shown;
     if let Some(c) = crate::ink::cursor(app).filter(|_| resp.hovered() || app.canvas.ink.is_some()) {
         ui.ctx().set_cursor_icon(c);
+    } else if let Some(d) = app.canvas.text_drop.as_ref().filter(|d| d.started && !d.cancelled) {
+        ui.ctx().set_cursor_icon(if d.copy { egui::CursorIcon::Copy } else { egui::CursorIcon::Move });
     } else if resp.hovered() || app.canvas.obj_drag.is_some() {
         let latest = ui.input(|i| i.pointer.latest_pos());
         let over_object = latest.and_then(|p| crate::objects::cursor(app, layout, &rects, geo.scale, p));
@@ -1515,7 +1528,9 @@ fn finish_canvas_frame(finish: CanvasFinish<'_>, out: egui::scroll_area::ScrollA
                 || latest.and_then(|p| page_at(&rects, layout, geo.scale, p)).is_some_and(|(pg, x, y)| layout.selection_bar_at(pg, x, y).is_some()));
         // An armed Format Painter shows over the text, as Word's brush does; egui has no brush,
         // so the copy pointer stands in (#3453). The selection bar keeps its arrow.
-        let fallback = if in_bar {
+        // Over selected text that can be dragged, the arrow shows, as in Word (#2449).
+        let on_selection = !app.canvas.dragging && latest.is_some_and(|p| text_drop::drags_selected_text(app, p));
+        let fallback = if in_bar || on_selection {
             egui::CursorIcon::Default
         } else if app.session.painter.is_some() {
             egui::CursorIcon::Copy
@@ -1762,6 +1777,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         // Alignment previews can move the selected text while the pointer is still over a mini
         // toolbar button. Keep the bar anchored to the live selection until the preview ends, or
         // it can move out from under the pointer and flicker between preview and live layouts.
+        app.canvas.selection_rects.clone_from(&screen_rects);
         let anchor_rects = if app.canvas.command_previewed.is_some() { live_selection_screen_rects(app, &rects, geo.scale) } else { screen_rects };
         app.canvas.mini_anchor = crate::mini_toolbar::visible_anchor(anchor_rects, visible_clip);
         // Content controls: the frame of the one the caret is in (all of them in Design Mode).
@@ -1921,6 +1937,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 ime_geometry = Some((cr, cr));
             }
         }
+        text_drop::drop_caret(app, &painter, &layout, &rects, geo.scale, page_view, dim_body);
         crate::objects::paint(app, &painter, &t, &layout, &rects, geo.scale);
         crate::dialogs_smart_art::frame_button(app, ui.ctx(), &layout, &rects, geo.scale, ui.clip_rect());
         crate::ink::paint(app, &painter, &rects, &layout, geo.scale);

@@ -29,6 +29,9 @@ pub struct Prefs {
     pub insert_key_overtype: bool,
     /// Overtype: typed characters replace the ones after the caret.
     pub overtype: bool,
+    /// Selected text can be dragged to another place with the mouse (File › Options › Advanced,
+    /// #2449). `edit.moveText` works either way.
+    pub drag_and_drop: bool,
     /// The unit rulers and dialogs show lengths in, when the user chose one (File › Options ›
     /// Advanced › Measurement units); `None` follows the region ([`Session::units`]). Saved under
     /// a new key; an older `units` value other than inches (the old default) carries over on load.
@@ -74,6 +77,7 @@ impl Default for Prefs {
             typing_replaces_selection: true,
             insert_key_overtype: false,
             overtype: false,
+            drag_and_drop: true,
             units: Default::default(),
             region: None,
             dictionaries_folder: None,
