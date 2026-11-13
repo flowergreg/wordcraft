@@ -127,7 +127,9 @@ pub(crate) fn comment_editor(app: &mut WordApp, ui: &mut Ui, id: u32, font: Opti
         .desired_width(f32::INFINITY)
         .hint_text(tl!("Add a comment"));
     if let Some(f) = &font {
-        edit = edit.font(f.clone());
+        // In a balloon (the only caller with a font): no frame or margin, so the text sits
+        // where the closed balloon draws it.
+        edit = edit.font(f.clone()).frame(egui::Frame::NONE).margin(egui::Margin::ZERO);
     }
     let r = capped_field(ui, field.with("scroll"), font.as_ref(), edit);
     if focus {

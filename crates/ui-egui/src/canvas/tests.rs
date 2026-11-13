@@ -5732,14 +5732,34 @@ fn double_click_drag_on_a_closed_balloon_selects_whole_words() {
     assert!(h.query_all_by_role(Role::MultilineTextInput).next().is_none(), "no field while closed");
     let card = h.state().canvas.balloon_rects.iter().find(|(i, _)| *i == id).map(|(_, r)| *r).expect("the comment has a balloon");
     // The body's first word, under the author and date lines.
-    let row = card.height() - 12.0;
-    let start = egui::pos2(card.min.x + 14.0, card.max.y - 6.0 - row.min(14.0) / 2.0);
+    let text_at = h.output().shapes.iter().find_map(|c| match &c.shape {
+        egui::Shape::Text(t) if t.galley.text().starts_with("alpha") => Some(t.pos),
+        _ => None,
+    });
+    // Inside "alpha", then dragged past the end of the line.
+    let start = text_at.expect("the closed balloon draws the comment") + vec2(6.0, 5.0);
     let end = egui::pos2(card.max.x - 6.0, start.y);
     h.event(Event::PointerMoved(start));
-    for pressed in [true, false, true] {
-        h.event(Event::PointerButton { pos: start, button: PointerButton::Primary, pressed, modifiers: Default::default() });
-        h.step();
-    }
+    // Press, release: the balloon opens. A host that paints only on input or request paints
+    // again only if asked, and the second press must find the field laid out and the words
+    // where they were.
+    let closed_text = |h: &egui_kittest::Harness<'_, WordApp>| {
+        h.output().shapes.iter().find_map(|c| match &c.shape {
+            egui::Shape::Text(t) if t.galley.text().starts_with("alpha") => Some(t.pos),
+            _ => None,
+        })
+    };
+    let before = closed_text(&h).expect("the closed balloon draws the comment");
+    h.event(Event::PointerButton { pos: start, button: PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.step();
+    h.event(Event::PointerButton { pos: start, button: PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.step();
+    assert!(h.ctx.requested_repaint_last_pass(), "opening the balloon asks for a repaint");
+    h.step();
+    let after = closed_text(&h).expect("the open balloon draws the comment");
+    assert!((after - before).length() < 1.5, "the words stay put: {before:?} → {after:?}");
+    h.event(Event::PointerButton { pos: start, button: PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.step();
     for i in 1..=6 {
         h.event(Event::PointerMoved(start + (end - start) * (i as f32 / 6.0)));
         h.step();
@@ -6071,4 +6091,47 @@ fn dragging_selected_text_to_the_edge_scrolls() {
     assert!(!first.starts_with("Marker"), "the text left the first paragraph: {first:?}");
     let (a, _) = selection(&h);
     assert!(a.path.last() > 3, "it landed well down the document: {a:?}");
+}
+
+/// The same in the Comments pane's cards.
+#[test]
+fn double_click_drag_in_the_comments_pane_selects_whole_words() {
+    use egui::accesskit::Role;
+    use egui::{Event, PointerButton};
+    use egui_kittest::kittest::Queryable;
+    let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    a.run("text.insert", json!({"text": "Some text here"})).unwrap();
+    a.run("select.text", json!({"text": "text"})).unwrap();
+    let id = a.run("review.newComment", json!({"text": "alpha beta gamma delta"})).unwrap()["id"].as_u64().unwrap() as u32;
+    a.run("view.commentsPane", json!({"value": true})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        a,
+    );
+    for _ in 0..6 {
+        h.step();
+    }
+    let field = h.query_all_by_role(Role::MultilineTextInput).map(|n| n.rect()).next().expect("the pane's card has a text field");
+    let start = egui::pos2(field.min.x as f32 + 12.0, field.center().y as f32);
+    let end = egui::pos2(field.max.x as f32 - 4.0, field.center().y as f32);
+    h.event(Event::PointerMoved(start));
+    for pressed in [true, false, true] {
+        h.event(Event::PointerButton { pos: start, button: PointerButton::Primary, pressed, modifiers: Default::default() });
+        h.step();
+    }
+    for i in 1..=6 {
+        h.event(Event::PointerMoved(start + (end - start) * (i as f32 / 6.0)));
+        h.step();
+    }
+    h.event(Event::Text("X".into()));
+    h.step();
+    h.event(Event::PointerButton { pos: end, button: PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.step();
+    leave_field(&mut h);
+    let part = h.state().session.doc.comments[&id].part;
+    assert_eq!(h.state().session.doc.plain_text(StoryRef::Part(part)), "X", "the drag took whole words from the first one");
 }

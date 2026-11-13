@@ -182,6 +182,9 @@ pub(super) fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, 
     if let Some((id, p)) = clicked {
         select_balloon(app, id);
         app.session.sel = wordcraft_engine::Selection::caret(p);
+        // Lay its fields out now, not at the next input: a double-click's second press must
+        // find the text field already there to select a word on the press (and drag by words).
+        ui.ctx().request_repaint();
     }
 }
 
@@ -308,7 +311,10 @@ fn active_balloon(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, ballo
     let _ = ui.interact(card, ui.scope_id().with(("balloon", id)), Sense::click());
     let inner = Rect::from_min_max(pos2(card.min.x + 10.0, card.min.y + 6.0), pos2(card.max.x - 6.0, card.min.y + 20_000.0));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
-    child.spacing_mut().item_spacing.y = 3.0;
+    // The same gaps as the closed balloon's (see `balloons`), so opening it with a click leaves
+    // the comment's words where they were: the second click of a double-click lands on the word
+    // it was aimed at.
+    child.spacing_mut().item_spacing.y = 0.0;
     let (font, bold, small) = (regular(fs), semibold(fs), regular((fs * 0.9).max(8.0)));
     let focus = std::mem::take(&mut app.canvas.balloon_focus);
     let name = |app: &WordApp, cid: u32| app.session.doc.comments.get(&cid).map(|c| author_name(&c.author)).unwrap_or_default();
@@ -316,11 +322,15 @@ fn active_balloon(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, ballo
     let when = |app: &WordApp, ui: &mut Ui, cid: u32| {
         let when = app.session.doc.comments.get(&cid).map(crate::local_time::comment_time).unwrap_or_default();
         if !when.is_empty() {
+            ui.add_space(1.0);
             ui.label(egui::RichText::new(when).font(small.clone()).color(t.text_dim));
         }
+        ui.add_space(4.0);
     };
     let resolved = app.session.doc.comments.get(&id).is_some_and(|c| c.resolved);
-    child.horizontal(|ui| {
+    // A row only as tall as the name (`horizontal` would make it a button's height).
+    let row = egui::vec2(child.available_width(), 0.0);
+    child.allocate_ui_with_layout(row, egui::Layout::left_to_right(egui::Align::Min), |ui| {
         ui.label(egui::RichText::new(name(app, id)).font(bold.clone()).color(t.text));
         if resolved {
             ui.label(egui::RichText::new(tl!("Resolved")).font(small.clone()).color(t.resolved_text));
@@ -329,7 +339,7 @@ fn active_balloon(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, ballo
     when(app, &mut child, id);
     crate::panes::comment_editor(app, &mut child, id, Some(font.clone()), focus && !app.canvas.balloon_reply);
     for rid in thread {
-        child.add_space(4.0);
+        child.add_space(9.0);
         child.label(egui::RichText::new(name(app, *rid)).font(bold.clone()).color(t.text));
         when(app, &mut child, *rid);
         crate::panes::comment_editor(app, &mut child, *rid, Some(font.clone()), false);
@@ -338,7 +348,7 @@ fn active_balloon(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, ballo
         app.canvas.balloon_reply = false;
     }
     let (mut reply, mut resolve, mut delete) = (false, false, false);
-    child.add_space(2.0);
+    child.add_space(5.0);
     child.horizontal(|ui| {
         let button = |ui: &mut Ui, s: &str| ui.add(egui::Button::new(egui::RichText::new(s).font(small.clone())).small()).clicked();
         reply = button(ui, tl!("Reply"));
