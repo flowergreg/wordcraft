@@ -160,7 +160,15 @@ pub(super) fn text_drop(app: &mut WordApp, ui: &Ui, rects: &[Rect], layout: &Doc
 }
 
 /// The drop caret: a dashed line where dragged text would land, in the caret's colour there.
-pub(super) fn drop_caret(app: &mut WordApp, painter: &egui::Painter, layout: &std::sync::Arc<DocLayout>, rects: &[Rect], scale: f32, view: u64, dim_body: bool) {
+pub(super) fn drop_caret(
+    app: &mut WordApp,
+    painter: &egui::Painter,
+    layout: &std::sync::Arc<DocLayout>,
+    rects: &[Rect],
+    scale: f32,
+    view: u64,
+    dim_body: bool,
+) {
     let Some((to, page)) = app.canvas.text_drop.as_ref().filter(|d| d.started && !d.cancelled).and_then(|d| d.to.clone()) else { return };
     if on_selection(app, &to) {
         return;

@@ -1136,7 +1136,9 @@ fn hiding_resolved_comments_skips_them_everywhere() {
         ids.push(s.run("review.newComment", &json!({"text": format!("on {w}")})).unwrap()["id"].as_u64().unwrap());
     }
     s.run("review.resolveComment", &json!({"id": ids[1]})).unwrap();
-    let listed = |s: &mut Session| s.run("review.comments", &json!({})).unwrap().as_array().unwrap().iter().map(|c| c["id"].as_u64().unwrap()).collect::<Vec<_>>();
+    let listed = |s: &mut Session| {
+        s.run("review.comments", &json!({})).unwrap().as_array().unwrap().iter().map(|c| c["id"].as_u64().unwrap()).collect::<Vec<_>>()
+    };
     assert_eq!(listed(&mut s).len(), 3);
     assert_eq!(s.run("review.showResolved", &json!({"value": false})).unwrap()["value"], false);
     assert_eq!(listed(&mut s), vec![ids[0], ids[2]]);
