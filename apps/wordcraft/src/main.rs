@@ -620,12 +620,13 @@ fn main() -> eframe::Result {
             let mut session = Session::new(doc);
             session.system_region = region;
             let mut app = WordApp::new(session, services(file_dialog, cancel_file_dialog, &cc.egui_ctx));
-            app.set_startup_update_check(true);
+            // Personal build (flowergreg/wordcraft): no update check, so an official release
+            // never replaces it with a copy that lacks these changes.
+            app.set_startup_update_check(false);
             load_prefs(&mut app);
             // After the preferences, so the reason it gives is in the interface language.
-            if updates_unsafe {
-                app.disable_self_update();
-            }
+            let _ = updates_unsafe;
+            app.disable_self_update();
             load_user_dictionary(&mut app);
             // Language packs from the suite's font store; an Install click is the person's own.
             wordcraft_engine::packs::use_font_store(true);
