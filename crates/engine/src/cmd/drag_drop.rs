@@ -166,6 +166,9 @@ fn drop_fragment(s: &mut Session, frag: Fragment, a: Pos, b: Pos, to: Pos, copy:
             delete_selection(s)?;
         }
         super::controls::restore_placeholder(s)?;
+        if !s.doc.settings.track_changes {
+            close_gap(s)?;
+        }
         match later {
             Some(k) => at_from_end(&s.doc, to.story, k).ok_or_else(|| CmdError::Failed("the drop point is not in the document".into()))?,
             None => to,
@@ -177,9 +180,76 @@ fn drop_fragment(s: &mut Session, frag: Fragment, a: Pos, b: Pos, to: Pos, copy:
     s.sel = Selection::caret(to);
     let start = super::paste::insert(s, frag)?;
     let end = s.sel.focus.clone();
+    let (start, end) = if s.doc.settings.track_changes { (start, end) } else { space_drop(s, start, end)? };
     s.sel = Selection { anchor: start, focus: end };
     s.goal_x = None;
     Ok(())
+}
+
+/// The character just before `p` in its paragraph, if any.
+fn char_before(s: &Session, p: &Pos) -> Option<char> {
+    s.doc.para_at(p)?.text.get(..p.off)?.chars().next_back()
+}
+
+/// The character at `p` in its paragraph, if any (none at its end).
+fn char_at(s: &Session, p: &Pos) -> Option<char> {
+    s.doc.para_at(p)?.text.get(p.off..)?.chars().next()
+}
+
+/// Punctuation that follows a word with no space before it. An apostrophe is left out: it joins
+/// words ("dell'archivio").
+fn closes(c: char) -> bool {
+    matches!(c, '.' | ',' | ';' | ':' | '!' | '?' | ')' | ']' | '}' | '»' | '”')
+}
+
+/// Word's smart spacing where moved text left (the caret): of two spaces that now meet, one goes,
+/// and so does a space left before punctuation or at the end of the paragraph.
+fn close_gap(s: &mut Session) -> Result<(), CmdError> {
+    let g = s.sel.focus.clone();
+    if g.off == 0 || char_before(s, &g) != Some(' ') {
+        return Ok(());
+    }
+    let after = char_at(s, &g);
+    if after.is_none_or(|c| c == ' ' || closes(c)) {
+        let from = Pos { off: g.off - 1, ..g.clone() };
+        let at = s.doc.delete_range(&from, &g)?;
+        s.sel = Selection::caret(at);
+    }
+    Ok(())
+}
+
+/// Word's smart spacing around dropped text (`start..end`, in one paragraph): a word dropped
+/// against another word gets a space between them, and a space it brings along goes where it
+/// would double one or stand before punctuation. Returns the dropped text's new ends.
+fn space_drop(s: &mut Session, mut start: Pos, mut end: Pos) -> Result<(Pos, Pos), CmdError> {
+    if start.story != end.story || start.path != end.path || start.off >= end.off {
+        return Ok((start, end));
+    }
+    let Some(text) = s.doc.para_at(&start).and_then(|p| p.text.get(start.off..end.off)).map(str::to_string) else {
+        return Ok((start, end));
+    };
+    let props = s.doc.para_at(&start).map(|p| p.props_of_char(start.off).clone()).unwrap_or_default();
+    let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+    // The end first, so the start's offsets still hold.
+    let next = char_at(s, &end);
+    if text.ends_with(' ') && next.is_none_or(|c| c == ' ' || closes(c)) {
+        let from = Pos { off: end.off - 1, ..end.clone() };
+        s.doc.delete_range(&from, &end)?;
+        end = from;
+    } else if word(text.chars().next_back()) && word(next) {
+        s.doc.insert_text(&end, " ", &props)?;
+    }
+    let prev = char_before(s, &start);
+    if text.starts_with(' ') && prev.is_none_or(|c| c == ' ') {
+        let to = Pos { off: start.off + 1, ..start.clone() };
+        s.doc.delete_range(&start, &to)?;
+        end.off = end.off.saturating_sub(1);
+    } else if word(text.chars().next()) && (word(prev) || prev.is_some_and(closes)) {
+        s.doc.insert_text(&start, " ", &props)?;
+        start.off += 1;
+        end.off += 1;
+    }
+    Ok((start, end))
 }
 
 #[cfg(test)]
@@ -354,14 +424,14 @@ mod tests {
         let end = s.doc.end_of(StoryRef::Body);
         s.run("select.range", &json!({"anchor": Pos { off: end.off - 5, ..end.clone() }, "focus": end})).unwrap();
         s.run("edit.moveText", &json!({"to": in_box})).unwrap();
-        assert_eq!(s.doc.plain_text(boxed), "afterBox");
+        assert_eq!(s.doc.plain_text(boxed), "after Box");
         assert_eq!(s.sel.focus.story, boxed);
         // The box itself can't go inside its own text.
         let body = s.doc.para(StoryRef::Body, &Path::top(0)).unwrap().text.clone();
         s.run("select.range", &json!({"anchor": Pos::body(0, 0), "focus": s.doc.end_of(StoryRef::Body)})).unwrap();
         assert!(s.run("edit.moveText", &json!({"to": in_box})).is_err());
         assert_eq!(s.doc.para(StoryRef::Body, &Path::top(0)).unwrap().text, body);
-        assert_eq!(s.doc.plain_text(boxed), "afterBox");
+        assert_eq!(s.doc.plain_text(boxed), "after Box");
     }
 
     /// "Intro", a 2×2 table with "r0c0"… in its cells, "After", "End".
@@ -418,9 +488,9 @@ mod tests {
         let mut s = with_table();
         select(&mut s, (0, 2), (0, 5));
         s.run("edit.moveText", &json!({"to": cell(1, 1, 2)})).unwrap();
-        assert_eq!(cell_text(&s, 1, 1), "r1troc1");
+        assert_eq!(cell_text(&s, 1, 1), "r1 tro c1", "smart spacing parts the words");
         assert_eq!(texts(&s)[0], "In");
-        assert_eq!(sel(&s), (cell(1, 1, 2), cell(1, 1, 5)));
+        assert_eq!(sel(&s), (cell(1, 1, 3), cell(1, 1, 6)));
     }
 
     #[test]
@@ -499,6 +569,34 @@ mod tests {
         let mut s = session("Ünïcødé text");
         select(&mut s, (0, 11), (0, 16));
         s.run("edit.moveText", &json!({"to": {"block": 0, "off": 1}})).unwrap();
-        assert_eq!(texts(&s), [" textÜnïcødé"]);
+        // (Smart spacing: the leading space doesn't start the paragraph; a space parts the words.)
+        assert_eq!(texts(&s), ["text Ünïcødé"]);
+    }
+
+    /// Word's smart spacing: a word dropped against another gets a space between them, and the
+    /// space left behind where it was goes when it would double one or end the paragraph.
+    #[test]
+    fn dropped_words_are_spaced_like_word() {
+        // "Principale" (no space) to the start of the next paragraph.
+        let mut s = session("del Fondo Principale\nTrascrizione");
+        select(&mut s, (0, 10), (0, 20));
+        drop_at(&mut s, 1, 0, false).unwrap();
+        assert_eq!(texts(&s), ["del Fondo", "Principale Trascrizione"]);
+        assert_eq!(s.selected_text(), "Principale");
+        // A double-clicked word ("quick ", with its space) dropped before a full stop.
+        let mut s = session("The quick brown fox.");
+        select(&mut s, (0, 4), (0, 10));
+        drop_at(&mut s, 0, 19, false).unwrap();
+        assert_eq!(texts(&s), ["The brown fox quick."]);
+        // Copied after a word: a space before it.
+        let mut s = session("one two");
+        select(&mut s, (0, 0), (0, 3));
+        drop_at(&mut s, 0, 7, true).unwrap();
+        assert_eq!(texts(&s), ["one two one"]);
+        // Removing a word between two spaces leaves one.
+        let mut s = session("a big cat\nx");
+        select(&mut s, (0, 2), (0, 5));
+        drop_at(&mut s, 1, 1, false).unwrap();
+        assert_eq!(texts(&s), ["a cat", "x big"]);
     }
 }
