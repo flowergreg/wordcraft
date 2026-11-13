@@ -1121,3 +1121,35 @@ mod spelling_navigation_tests {
         }
     }
 }
+
+/// Show Resolved off hides resolved comments and the replies under them from the list (the
+/// Comments pane and the balloons) and from Next / Previous; on brings them back. It is a view
+/// setting that is never saved.
+#[test]
+fn hiding_resolved_comments_skips_them_everywhere() {
+    let mut s = Session::new(Document::new());
+    s.view.proofing = false;
+    s.run("document.setText", &json!({"text": "one two three"})).unwrap();
+    let mut ids = Vec::new();
+    for w in ["one", "two", "three"] {
+        s.run("select.text", &json!({"text": w})).unwrap();
+        ids.push(s.run("review.newComment", &json!({"text": format!("on {w}")})).unwrap()["id"].as_u64().unwrap());
+    }
+    s.run("review.resolveComment", &json!({"id": ids[1]})).unwrap();
+    let listed = |s: &mut Session| s.run("review.comments", &json!({})).unwrap().as_array().unwrap().iter().map(|c| c["id"].as_u64().unwrap()).collect::<Vec<_>>();
+    assert_eq!(listed(&mut s).len(), 3);
+    assert_eq!(s.run("review.showResolved", &json!({"value": false})).unwrap()["value"], false);
+    assert_eq!(listed(&mut s), vec![ids[0], ids[2]]);
+    // From the first comment, Next goes straight to the third.
+    s.run("caret.docStart", &json!({})).unwrap();
+    s.run("review.nextComment", &json!({})).unwrap();
+    let text = s.doc.plain_text(wordcraft_doc::StoryRef::Body);
+    let three = text.find("three").unwrap();
+    assert!(s.sel.focus.off + 2 >= three, "skipped the resolved comment on \"two\": {:?} in {text:?}", s.sel.focus);
+    // Not saved with the view.
+    let saved = serde_json::to_value(&s.view).unwrap();
+    assert!(saved.get("hideResolved").is_none());
+    // No value switches it back.
+    assert_eq!(s.run("review.showResolved", &json!({})).unwrap()["value"], true);
+    assert_eq!(listed(&mut s).len(), 3);
+}
